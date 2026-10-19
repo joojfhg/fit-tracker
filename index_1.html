@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fit-Tracker</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fit-Tracker">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1115">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 24px);
+    background: #0f1115;
+    color: #e8eaed;
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #9aa0a6; margin: 0 0 20px; font-size: 14px; }
+  .card { background: #1a1d24; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 16px; margin: 0 0 8px; }
+  .hint { color: #9aa0a6; font-size: 13px; margin: 0 0 10px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button, input[type=file]::file-selector-button {
+    background: #2e7d5b; color: #fff; border: 0; border-radius: 10px;
+    padding: 10px 14px; font-size: 15px; cursor: pointer;
+  }
+  input[type=file] { max-width: 100%; color: #9aa0a6; font-size: 14px; }
+  pre {
+    background: #0f1115; border-radius: 10px; padding: 10px; margin: 10px 0 0;
+    white-space: pre-wrap; word-break: break-word; font-size: 12px;
+    max-height: 260px; overflow: auto; color: #cfd3d8;
+  }
+  .ok { color: #6fdc9b; } .bad { color: #ff8a80; }
+  .big { font-size: 28px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Fit-Tracker – Test</h1>
+  <p class="sub">Phase 1: Wir prüfen, ob die Web-App auf deinem iPhone wie geplant funktioniert.</p>
+
+  <div class="card">
+    <h2>1. Als App geöffnet?</h2>
+    <p class="hint">Vom Home-Bildschirm gestartet sollte hier „Ja“ stehen.</p>
+    <div id="standalone">…</div>
+  </div>
+
+  <div class="card">
+    <h2>2. Speicher-Test</h2>
+    <p class="hint">Tippe ein paar Mal auf „+1“, schließe die App komplett (nach oben wischen) und öffne sie wieder. Der Zähler muss bleiben.</p>
+    <div class="row">
+      <div class="big" id="counter">0</div>
+      <button id="plus">+1</button>
+    </div>
+    <div id="storageInfo" class="hint" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Datei-Test</h2>
+    <p class="hint">Wähle eine Datei aus (später: die Datei vom Kurzbefehl). Die Seite zeigt dir, was darin steht. Die Datei wird nicht hochgeladen, sie bleibt auf deinem iPhone.</p>
+    <input type="file" id="file" multiple>
+    <pre id="fileOut">Noch keine Datei gewählt.</pre>
+  </div>
+
+  <div class="card">
+    <h2>4. Zwischenablage-Test</h2>
+    <p class="hint">Kopiere irgendeinen Text und tippe dann auf den Knopf. iOS fragt eventuell, ob das Einfügen erlaubt ist.</p>
+    <button id="paste">Aus Zwischenablage lesen</button>
+    <pre id="pasteOut">Noch nichts gelesen.</pre>
+  </div>
+
+  <p class="sub">Testversion 1</p>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+
+  // 1. Standalone-Erkennung
+  var standalone = (window.navigator.standalone === true) ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  $('standalone').innerHTML = standalone
+    ? '<span class="ok">Ja – läuft als App.</span>'
+    : '<span class="bad">Nein – läuft im Safari-Tab.</span> Füge die Seite zum Home-Bildschirm hinzu und starte sie von dort.';
+
+  // 2. Speicher-Test (localStorage + IndexedDB)
+  var lsKey = 'fit_test_counter';
+  function lsGet() { try { return parseInt(localStorage.getItem(lsKey) || '0', 10) || 0; } catch (e) { return null; } }
+  function lsSet(v) { try { localStorage.setItem(lsKey, String(v)); return true; } catch (e) { return false; } }
+
+  function idbOpen() {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open('fit_test_db', 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore('kv'); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+  function idbGet(key) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var r = db.transaction('kv').objectStore('kv').get(key);
+        r.onsuccess = function () { resolve(r.result); };
+        r.onerror = function () { reject(r.error); };
+      });
+    });
+  }
+  function idbSet(key, val) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(val, key);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  var count = 0;
+  function render(info) {
+    $('counter').textContent = String(count);
+    $('storageInfo').textContent = info || '';
+  }
+
+  function init() {
+    var ls = lsGet();
+    idbGet('counter').then(function (v) {
+      var idb = (typeof v === 'number') ? v : 0;
+      count = Math.max(ls || 0, idb);
+      var info = 'localStorage: ' + (ls === null ? 'nicht verfügbar' : 'ok') + ' · IndexedDB: ok';
+      if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().then(function (p) {
+          render(info + ' · dauerhaft geschützt: ' + (p ? 'ja' : 'nein (normal bei iOS)'));
+        }).catch(function () { render(info); });
+      } else { render(info); }
+    }).catch(function () {
+      count = ls || 0;
+      render('localStorage: ' + (ls === null ? 'nicht verfügbar' : 'ok') + ' · IndexedDB: FEHLER');
+    });
+  }
+
+  $('plus').addEventListener('click', function () {
+    count += 1;
+    lsSet(count);
+    idbSet('counter', count).catch(function () {});
+    $('counter').textContent = String(count);
+  });
+  init();
+
+  // 3. Datei-Test
+  function describeJson(value) {
+    var lines = [];
+    function typeOf(v) { return Array.isArray(v) ? 'Liste' : (v === null ? 'null' : typeof v); }
+    lines.push('JSON gültig. Oberste Ebene: ' + typeOf(value));
+    if (Array.isArray(value)) {
+      lines.push('Einträge: ' + value.length);
+      if (value.length && typeof value[0] === 'object' && value[0] !== null) {
+        lines.push('Felder im ersten Eintrag: ' + Object.keys(value[0]).join(', '));
+        lines.push('Erster Eintrag: ' + JSON.stringify(value[0]).slice(0, 400));
+      } else if (value.length) {
+        lines.push('Erster Eintrag: ' + JSON.stringify(value[0]).slice(0, 400));
+      }
+    } else if (value && typeof value === 'object') {
+      Object.keys(value).slice(0, 30).forEach(function (k) {
+        var v = value[k];
+        var extra = Array.isArray(v) ? (' (Liste mit ' + v.length + ' Einträgen)') : '';
+        lines.push('Feld „' + k + '“: ' + typeOf(v) + extra);
+      });
+    }
+    return lines.join('\n');
+  }
+
+  function inspectFile(file) {
+    var out = [];
+    out.push('Datei: ' + file.name);
+    out.push('Größe: ' + (file.size / 1024).toFixed(1) + ' KB');
+    out.push('Typ: ' + (file.type || 'unbekannt'));
+    var previewLen = 1500;
+    return file.slice(0, previewLen).text().then(function (head) {
+      var isJson = /\.json$/i.test(file.name) || /^\s*[\[{]/.test(head);
+      var p = Promise.resolve();
+      if (isJson && file.size <= 20 * 1024 * 1024) {
+        p = file.text().then(function (full) {
+          try { out.push(''); out.push(describeJson(JSON.parse(full))); }
+          catch (e) { out.push(''); out.push('Sieht nach JSON aus, ist aber nicht gültig: ' + e.message); }
+        });
+      }
+      return p.then(function () {
+        out.push('');
+        out.push('Anfang der Datei:');
+        out.push(head);
+        return out.join('\n');
+      });
+    });
+  }
+
+  $('file').addEventListener('change', function (ev) {
+    var files = Array.prototype.slice.call(ev.target.files || []);
+    if (!files.length) { return; }
+    $('fileOut').textContent = 'Lese …';
+    Promise.all(files.map(inspectFile)).then(function (parts) {
+      $('fileOut').textContent = parts.join('\n\n----------\n\n');
+    }).catch(function (e) {
+      $('fileOut').textContent = 'Fehler beim Lesen: ' + e.message;
+    });
+  });
+
+  // 4. Zwischenablage-Test
+  $('paste').addEventListener('click', function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      $('pasteOut').textContent = 'Dieser Browser erlaubt kein Lesen der Zwischenablage.';
+      return;
+    }
+    navigator.clipboard.readText().then(function (t) {
+      $('pasteOut').textContent = 'Länge: ' + t.length + ' Zeichen\n\n' + t.slice(0, 1000);
+    }).catch(function (e) {
+      $('pasteOut').textContent = 'Nicht erlaubt oder Fehler: ' + (e && e.message ? e.message : e);
+    });
+  });
+})();
+</script>
+</body>
+</html>
