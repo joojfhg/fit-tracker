@@ -12,95 +12,217 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f1115">
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115; --card: #1a1d24; --line: #2a2e38;
+    --text: #e8eaed; --muted: #9aa0a6; --accent: #6fdc9b; --accent-bg: #2e7d5b;
+    --bad: #ff8a80; --warn: #f2c26b;
+    --wach: #f2a65a; --rem: #b48cf2; --kern: #5aa9e6; --tief: #2f5fc4;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
   body {
-    margin: 0;
-    padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 24px);
-    background: #0f1115;
-    color: #e8eaed;
     font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
   }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .sub { color: #9aa0a6; margin: 0 0 20px; font-size: 14px; }
-  .card { background: #1a1d24; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
-  .card h2 { font-size: 16px; margin: 0 0 8px; }
-  .hint { color: #9aa0a6; font-size: 13px; margin: 0 0 10px; }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  button, input[type=file]::file-selector-button {
-    background: #2e7d5b; color: #fff; border: 0; border-radius: 10px;
-    padding: 10px 14px; font-size: 15px; cursor: pointer;
+  main { padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 88px); max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 14px; }
+  h2 { font-size: 17px; margin: 0 0 10px; }
+  h3 { font-size: 14px; margin: 18px 0 8px; color: var(--muted); font-weight: 600; }
+  .card { background: var(--card); border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  .ok { color: var(--accent); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  [hidden] { display: none !important; }
+
+  /* Tab-Leiste */
+  #tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; display: flex;
+    background: rgba(26, 29, 36, 0.96); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
   }
-  input[type=file] { max-width: 100%; color: #9aa0a6; font-size: 14px; }
-  pre {
-    background: #0f1115; border-radius: 10px; padding: 10px; margin: 10px 0 0;
-    white-space: pre-wrap; word-break: break-word; font-size: 12px;
-    max-height: 260px; overflow: auto; color: #cfd3d8;
+  #tabbar button {
+    flex: 1; background: none; border: 0; color: var(--muted); padding: 10px 4px 8px;
+    font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 3px;
   }
-  .ok { color: #6fdc9b; } .bad { color: #ff8a80; }
-  .big { font-size: 28px; font-weight: 600; }
+  #tabbar button svg { width: 24px; height: 24px; }
+  #tabbar button.active { color: var(--accent); }
+
+  button.primary, label.primary {
+    display: inline-block; background: var(--accent-bg); color: #fff; border: 0; border-radius: 10px;
+    padding: 11px 16px; font-size: 15px; cursor: pointer;
+  }
+  button.ghost { background: none; border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 9px 14px; font-size: 14px; }
+  button.danger { background: none; border: 1px solid var(--bad); color: var(--bad); border-radius: 10px; padding: 9px 14px; font-size: 14px; }
+
+  /* Zeitraum-Umschalter */
+  .seg { display: flex; background: var(--bg); border-radius: 10px; padding: 3px; gap: 3px; margin-bottom: 12px; }
+  .seg button { flex: 1; background: none; border: 0; color: var(--muted); padding: 7px 4px; border-radius: 8px; font-size: 14px; }
+  .seg button.active { background: var(--line); color: var(--text); }
+
+  /* Balkendiagramm */
+  .chart { display: flex; align-items: flex-end; gap: 4px; height: 110px; overflow-x: auto; padding-bottom: 2px; }
+  .bar { flex: 1 0 22px; max-width: 48px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; background: none; border: 0; padding: 0; color: var(--muted); font-size: 11px; }
+  .bar .fill { width: 100%; border-radius: 5px 5px 0 0; background: var(--accent-bg); min-height: 3px; }
+  .bar.sel .fill { background: var(--accent); }
+  .bar.none .fill { background: none; border-bottom: 2px dashed var(--line); height: 0; min-height: 0; }
+  .bar.incomplete .fill { background: var(--line); height: 14%; }
+  .bar .val { font-size: 11px; color: var(--text); margin-bottom: 2px; }
+  .bar .lbl { margin-top: 4px; white-space: nowrap; }
+  .bar.sel .lbl { color: var(--accent); }
+
+  /* Score */
+  .score-head { display: flex; align-items: baseline; gap: 10px; }
+  .score-big { font-size: 52px; font-weight: 700; line-height: 1; }
+  .score-sub { color: var(--muted); font-size: 14px; }
+  .parts { margin-top: 12px; display: grid; gap: 9px; }
+  .part-row { display: grid; grid-template-columns: 104px 1fr 62px; gap: 10px; align-items: center; font-size: 14px; }
+  .part-bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+  .part-bar i { display: block; height: 100%; background: var(--accent-bg); border-radius: 4px; }
+  .part-val { text-align: right; color: var(--muted); }
+
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin-top: 14px; }
+  .fact { font-size: 13px; color: var(--muted); }
+  .fact b { display: block; font-size: 16px; color: var(--text); font-weight: 600; }
+
+  .hypno { width: 100%; height: auto; display: block; margin-top: 6px; }
+  .ph-W { fill: var(--wach); } .ph-R { fill: var(--rem); } .ph-K { fill: var(--kern); } .ph-T { fill: var(--tief); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
+  .axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+
+  /* Verlaufsliste */
+  .rows { display: grid; }
+  .rowbtn { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); color: var(--text); padding: 10px 2px; font-size: 14px; }
+  .rowbtn:first-child { border-top: 0; }
+  .rowbtn small { display: block; color: var(--muted); font-size: 12px; }
+  .rowbtn .pts { font-weight: 700; min-width: 34px; text-align: right; }
+  .rowbtn.sel { background: rgba(111, 220, 155, 0.08); }
+  .rowbtn.none { color: var(--muted); }
+
+  .banner { background: #3a2f17; color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; }
+  .placeholder { opacity: 0.6; }
+  .placeholder p { margin: 0; font-size: 14px; color: var(--muted); }
+
+  /* Import und Einstellungen */
+  pre.result { background: var(--bg); border-radius: 10px; padding: 10px; margin: 10px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; color: #cfd3d8; }
+  .field { display: grid; grid-template-columns: 1fr 140px; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 14px; }
+  .field input { width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 8px; font-size: 16px; }
+  input[type=file] { display: none; }
+  ol.steps { padding-left: 20px; margin: 0 0 10px; font-size: 14px; }
+  ol.steps li { margin-bottom: 4px; }
+  .foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 18px; }
 </style>
 </head>
 <body>
-  <h1>Fit-Tracker – Test</h1>
-  <p class="sub">Phase 1: Wir prüfen, ob die Web-App auf deinem iPhone wie geplant funktioniert.</p>
+<main>
+  <div id="volatile" class="banner" hidden>Speichern im Browser ist nicht möglich. Die Daten gehen beim Schließen der App verloren.</div>
 
-  <div class="card">
-    <h2>1. Als App geöffnet?</h2>
-    <p class="hint">Vom Home-Bildschirm gestartet sollte hier „Ja“ stehen.</p>
-    <div id="standalone">…</div>
-  </div>
+  <!-- DASHBOARD -->
+  <section id="tab-dashboard">
+    <h1>Dashboard</h1>
 
-  <div class="card">
-    <h2>2. Speicher-Test</h2>
-    <p class="hint">Tippe ein paar Mal auf „+1“, schließe die App komplett (nach oben wischen) und öffne sie wieder. Der Zähler muss bleiben.</p>
-    <div class="row">
-      <div class="big" id="counter">0</div>
-      <button id="plus">+1</button>
+    <div class="card">
+      <h2>Schlaf</h2>
+      <div id="gapBanner" class="banner" hidden></div>
+      <div id="sleepBody"></div>
     </div>
-    <div id="storageInfo" class="hint" style="margin-top:10px"></div>
-  </div>
 
-  <div class="card">
-    <h2>3. Datei-Test</h2>
-    <p class="hint">Wähle eine Datei aus (später: die Datei vom Kurzbefehl). Die Seite zeigt dir, was darin steht. Die Datei wird nicht hochgeladen, sie bleibt auf deinem iPhone.</p>
-    <input type="file" id="file" multiple>
-    <pre id="fileOut">Noch keine Datei gewählt.</pre>
-  </div>
+    <div class="card placeholder"><h2>Ruhepuls</h2><p>Kommt in einer späteren Phase.</p></div>
+    <div class="card placeholder"><h2>Stress</h2><p>Kommt in einer späteren Phase.</p></div>
+    <div class="card placeholder"><h2>VO2max</h2><p>Kommt in einer späteren Phase.</p></div>
+  </section>
 
-  <div class="card">
-    <h2>4. Zwischenablage-Test</h2>
-    <p class="hint">Kopiere irgendeinen Text und tippe dann auf den Knopf. iOS fragt eventuell, ob das Einfügen erlaubt ist.</p>
-    <button id="paste">Aus Zwischenablage lesen</button>
-    <pre id="pasteOut">Noch nichts gelesen.</pre>
-  </div>
+  <!-- TRAINING -->
+  <section id="tab-training" hidden>
+    <h1>Training</h1>
+    <div class="card placeholder">
+      <h2>Krafttraining, Läufe, Körperdaten</h2>
+      <p>Kommt als Nächstes: eigene Übungen mit Gewicht und Wiederholungen, importierte Läufe sowie Größe und Gewicht mit Verlauf.</p>
+    </div>
+  </section>
 
-  <p class="sub">Testversion 1</p>
+  <!-- IMPORT -->
+  <section id="tab-import" hidden>
+    <h1>Import</h1>
 
+    <div class="card">
+      <h2>Schlafdaten importieren</h2>
+      <ol class="steps">
+        <li>Kurzbefehl starten (er speichert <b>schlaf.txt</b> in deinem Ordner).</li>
+        <li>Hier die Datei auswählen.</li>
+      </ol>
+      <label class="primary" for="file">Datei auswählen</label>
+      <input type="file" id="file" multiple>
+      <div class="hint" id="lastImport" style="margin-top:10px"></div>
+      <pre class="result" id="importResult" hidden></pre>
+      <div style="margin-top:10px"><button class="ghost" id="toDash" hidden>Zum Dashboard</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Schlafscore-Einstellungen</h2>
+      <p class="hint">Startwerte. Für volle Punkte gilt der erste Wert, für 0 Punkte der zweite, dazwischen sinkt die Punktzahl gleichmäßig.</p>
+      <div class="field"><span>Schlafdauer, volle Punkte ab (Std.)</span><input type="number" step="0.1" inputmode="decimal" id="s_durFull"></div>
+      <div class="field"><span>Schlafdauer, 0 Punkte bei (Std.)</span><input type="number" step="0.1" inputmode="decimal" id="s_durZero"></div>
+      <div class="field"><span>Tiefschlaf, volle Punkte ab (Min.)</span><input type="number" step="1" inputmode="numeric" id="s_deepFull"></div>
+      <div class="field"><span>Tiefschlaf, 0 Punkte bei (Min.)</span><input type="number" step="1" inputmode="numeric" id="s_deepZero"></div>
+      <div class="field"><span>REM, volle Punkte ab (Min.)</span><input type="number" step="1" inputmode="numeric" id="s_remFull"></div>
+      <div class="field"><span>REM, 0 Punkte bei (Min.)</span><input type="number" step="1" inputmode="numeric" id="s_remZero"></div>
+      <div class="field"><span>Einschlaf-Fenster von</span><input type="time" id="s_onsetFrom"></div>
+      <div class="field"><span>Einschlaf-Fenster bis</span><input type="time" id="s_onsetTo"></div>
+      <div id="settingsMsg" class="hint"></div>
+      <button class="ghost" id="resetSettings">Zurücksetzen</button>
+    </div>
+
+    <div class="card">
+      <h2>Daten</h2>
+      <p class="hint" id="dataInfo"></p>
+      <button class="danger" id="clearData">Alle Schlafdaten löschen</button>
+    </div>
+    <div class="foot">Version 2 · Schlaf</div>
+  </section>
+</main>
+
+<nav id="tabbar">
+  <button data-tab="dashboard" class="active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+    Dashboard
+  </button>
+  <button data-tab="training">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>
+    Training
+  </button>
+  <button data-tab="import">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg>
+    Import
+  </button>
+</nav>
+
+<script src="core.js"></script>
 <script>
 (function () {
   'use strict';
+  var C = window.FitCore;
   var $ = function (id) { return document.getElementById(id); };
 
-  // 1. Standalone-Erkennung
-  var standalone = (window.navigator.standalone === true) ||
-    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-  $('standalone').innerHTML = standalone
-    ? '<span class="ok">Ja – läuft als App.</span>'
-    : '<span class="bad">Nein – läuft im Safari-Tab.</span> Füge die Seite zum Home-Bildschirm hinzu und starte sie von dort.';
+  if (!C) {
+    document.body.innerHTML = '<p style="padding:24px;color:#ff8a80;font:16px sans-serif">Die Datei core.js fehlt. Lade sie in GitHub in denselben Ordner wie index.html hoch.</p>';
+    return;
+  }
 
-  // 2. Speicher-Test (localStorage + IndexedDB)
-  var lsKey = 'fit_test_counter';
-  function lsGet() { try { return parseInt(localStorage.getItem(lsKey) || '0', 10) || 0; } catch (e) { return null; } }
-  function lsSet(v) { try { localStorage.setItem(lsKey, String(v)); return true; } catch (e) { return false; } }
-
+  /* ---------- Speicher ---------- */
+  var mem = {};
+  var dbPromise = null;
   function idbOpen() {
-    return new Promise(function (resolve, reject) {
-      var req = indexedDB.open('fit_test_db', 1);
-      req.onupgradeneeded = function () { req.result.createObjectStore('kv'); };
-      req.onsuccess = function () { resolve(req.result); };
-      req.onerror = function () { reject(req.error); };
-    });
+    if (!dbPromise) {
+      dbPromise = new Promise(function (resolve, reject) {
+        var req = indexedDB.open('fit_db', 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore('kv'); };
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      });
+    }
+    return dbPromise;
   }
   function idbGet(key) {
     return idbOpen().then(function (db) {
@@ -121,107 +243,367 @@
       });
     });
   }
-
-  var count = 0;
-  function render(info) {
-    $('counter').textContent = String(count);
-    $('storageInfo').textContent = info || '';
+  function kvGet(key) {
+    return idbGet(key).catch(function () {
+      try { var v = localStorage.getItem('fit_' + key); return v === null ? undefined : JSON.parse(v); }
+      catch (e) { return mem[key]; }
+    });
   }
-
-  function init() {
-    var ls = lsGet();
-    idbGet('counter').then(function (v) {
-      var idb = (typeof v === 'number') ? v : 0;
-      count = Math.max(ls || 0, idb);
-      var info = 'localStorage: ' + (ls === null ? 'nicht verfügbar' : 'ok') + ' · IndexedDB: ok';
-      if (navigator.storage && navigator.storage.persist) {
-        navigator.storage.persist().then(function (p) {
-          render(info + ' · dauerhaft geschützt: ' + (p ? 'ja' : 'nein (normal bei iOS)'));
-        }).catch(function () { render(info); });
-      } else { render(info); }
-    }).catch(function () {
-      count = ls || 0;
-      render('localStorage: ' + (ls === null ? 'nicht verfügbar' : 'ok') + ' · IndexedDB: FEHLER');
+  function kvSet(key, val) {
+    return idbSet(key, val).catch(function () {
+      try { localStorage.setItem('fit_' + key, JSON.stringify(val)); }
+      catch (e) { mem[key] = val; $('volatile').hidden = false; }
     });
   }
 
-  $('plus').addEventListener('click', function () {
-    count += 1;
-    lsSet(count);
-    idbSet('counter', count).catch(function () {});
-    $('counter').textContent = String(count);
-  });
-  init();
+  /* ---------- Zustand ---------- */
+  var state = {
+    segments: [],
+    cfg: copy(C.DEFAULT_CONFIG),
+    meta: {},
+    nights: [],
+    range: 7,
+    selected: null
+  };
+  function copy(o) { return JSON.parse(JSON.stringify(o)); }
 
-  // 3. Datei-Test
-  function describeJson(value) {
-    var lines = [];
-    function typeOf(v) { return Array.isArray(v) ? 'Liste' : (v === null ? 'null' : typeof v); }
-    lines.push('JSON gültig. Oberste Ebene: ' + typeOf(value));
-    if (Array.isArray(value)) {
-      lines.push('Einträge: ' + value.length);
-      if (value.length && typeof value[0] === 'object' && value[0] !== null) {
-        lines.push('Felder im ersten Eintrag: ' + Object.keys(value[0]).join(', '));
-        lines.push('Erster Eintrag: ' + JSON.stringify(value[0]).slice(0, 400));
-      } else if (value.length) {
-        lines.push('Erster Eintrag: ' + JSON.stringify(value[0]).slice(0, 400));
-      }
-    } else if (value && typeof value === 'object') {
-      Object.keys(value).slice(0, 30).forEach(function (k) {
-        var v = value[k];
-        var extra = Array.isArray(v) ? (' (Liste mit ' + v.length + ' Einträgen)') : '';
-        lines.push('Feld „' + k + '“: ' + typeOf(v) + extra);
-      });
-    }
-    return lines.join('\n');
+  function recompute() {
+    var sessions = C.buildSessions(state.segments, state.cfg);
+    state.nights = C.pickNights(sessions);
+    state.nights.forEach(function (n) { n.score = C.scoreNight(n.session, state.cfg); });
+    var has = state.nights.some(function (n) { return n.dateKey === state.selected; });
+    if (!has) { state.selected = state.nights.length ? state.nights[state.nights.length - 1].dateKey : null; }
   }
 
-  function inspectFile(file) {
+  /* ---------- Hilfsfunktionen ---------- */
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function fmtDur(min) {
+    var h = Math.floor(min / 60), m = Math.round(min % 60);
+    return h === 0 ? m + ' min' : h + ' h ' + pad(m) + ' min';
+  }
+  function fmtTime(epochMin) { var d = new Date(epochMin * 60000); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function keyToDate(k) { var p = k.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function dateToKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  var WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  function fmtDay(k) { var d = keyToDate(k); return WD[d.getDay()] + ', ' + pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.'; }
+  function fmtDayLong(k) { var d = keyToDate(k); return fmtDay(k) + d.getFullYear(); }
+  function daysBetween(a, b) { return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000); }
+  function minToHM(m) { return pad(Math.floor(m / 60) % 24) + ':' + pad(m % 60); }
+  function hmToMin(s) { var p = String(s).split(':'); return (+p[0]) * 60 + (+p[1] || 0); }
+
+  function slotsForRange() {
+    var today = new Date(); today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    var first = state.nights.length ? keyToDate(state.nights[0].dateKey) : today;
+    var n = state.range === 0 ? Math.max(1, daysBetween(first, today) + 1) : state.range;
     var out = [];
-    out.push('Datei: ' + file.name);
-    out.push('Größe: ' + (file.size / 1024).toFixed(1) + ' KB');
-    out.push('Typ: ' + (file.type || 'unbekannt'));
-    var previewLen = 1500;
-    return file.slice(0, previewLen).text().then(function (head) {
-      var isJson = /\.json$/i.test(file.name) || /^\s*[\[{]/.test(head);
-      var p = Promise.resolve();
-      if (isJson && file.size <= 20 * 1024 * 1024) {
-        p = file.text().then(function (full) {
-          try { out.push(''); out.push(describeJson(JSON.parse(full))); }
-          catch (e) { out.push(''); out.push('Sieht nach JSON aus, ist aber nicht gültig: ' + e.message); }
-        });
-      }
-      return p.then(function () {
-        out.push('');
-        out.push('Anfang der Datei:');
-        out.push(head);
-        return out.join('\n');
-      });
+    for (var i = n - 1; i >= 0; i--) {
+      var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+      out.push(dateToKey(d));
+    }
+    return out;
+  }
+  function nightByKey(k) {
+    for (var i = 0; i < state.nights.length; i++) { if (state.nights[i].dateKey === k) { return state.nights[i]; } }
+    return null;
+  }
+
+  /* ---------- Dashboard ---------- */
+  function hypnogram(sess) {
+    var W = 600, rowH = 24, step = 28;
+    var span = (sess.end - sess.start) || 1;
+    var lvl = { W: 0, R: 1, K: 2, T: 3 };
+    var rects = sess.segs.map(function (x) {
+      var xx = (x.s - sess.start) / span * W;
+      var ww = Math.max((x.e - x.s) / span * W, 1.5);
+      return '<rect class="ph-' + x.p + '" x="' + xx.toFixed(1) + '" y="' + (lvl[x.p] * step) + '" width="' + ww.toFixed(1) + '" height="' + rowH + '" rx="2"/>';
+    }).join('');
+    return '<svg class="hypno" viewBox="0 0 ' + W + ' 108" role="img" aria-label="Schlafphasen der Nacht">' + rects + '</svg>' +
+      '<div class="axis"><span>' + fmtTime(sess.start) + '</span><span>' + fmtTime(sess.end) + '</span></div>' +
+      '<div class="legend"><span><i style="background:var(--wach)"></i>Wach</span><span><i style="background:var(--rem)"></i>REM</span><span><i style="background:var(--kern)"></i>Kern</span><span><i style="background:var(--tief)"></i>Tief</span></div>';
+  }
+
+  function partRow(label, pts, max) {
+    var w = Math.max(0, Math.min(100, pts / max * 100));
+    return '<div class="part-row"><span>' + label + '</span><div class="part-bar"><i style="width:' + w.toFixed(0) + '%"></i></div><span class="part-val">' + pts.toFixed(1) + ' / ' + max + '</span></div>';
+  }
+
+  function nightDetail(n) {
+    var s = n.session, sc = n.score, m = s.minutes;
+    var html = '<h3>Nacht auf ' + fmtDayLong(n.dateKey) + '</h3>';
+    if (sc.incomplete) {
+      html += '<div class="score-head"><span class="score-big muted">–</span><span class="score-sub warn">Unvollständig: nur ' + fmtDur(s.sleepMin) + ' Schlaf erfasst, kein Score.</span></div>';
+    } else {
+      html += '<div class="score-head"><span class="score-big">' + sc.total + '</span><span class="score-sub">von 100 Punkten</span></div>';
+    }
+    html += '<div class="parts">' +
+      partRow('Schlafdauer', sc.parts.dur, 30) +
+      partRow('Tiefschlaf', sc.parts.deep, 30) +
+      partRow('REM-Schlaf', sc.parts.rem, 30) +
+      partRow('Einschlafzeit', sc.parts.onset, 10) + '</div>';
+    html += '<div class="facts">' +
+      '<div class="fact">Eingeschlafen<b>' + fmtTime(s.start) + '</b></div>' +
+      '<div class="fact">Aufgewacht<b>' + fmtTime(s.end) + '</b></div>' +
+      '<div class="fact">Schlaf gesamt<b>' + fmtDur(s.sleepMin) + '</b></div>' +
+      '<div class="fact">Wachzeit<b>' + fmtDur(m.W) + '</b></div>' +
+      '<div class="fact">Tiefschlaf<b>' + fmtDur(m.T) + '</b></div>' +
+      '<div class="fact">REM-Schlaf<b>' + fmtDur(m.R) + '</b></div>' +
+      '<div class="fact">Kernschlaf<b>' + fmtDur(m.K) + '</b></div>' +
+      '<div class="fact">Wachphasen<b>' + s.awakenings + '×</b></div></div>';
+    if (n.napCount) {
+      html += '<p class="hint" style="margin-top:12px">Zusätzlich ' + n.napCount + ' kürzere Schlafphase' + (n.napCount > 1 ? 'n' : '') + ' (' + fmtDur(n.napMin) + '), nicht im Score.</p>';
+    }
+    html += '<h3>Schlafphasen</h3>' + hypnogram(s);
+    return html;
+  }
+
+  function renderDashboard() {
+    var body = $('sleepBody');
+    var banner = $('gapBanner');
+    banner.hidden = true;
+
+    if (!state.nights.length) {
+      body.innerHTML = '<p class="hint">Noch keine Schlafdaten. Öffne den Tab „Import“ und wähle deine Datei schlaf.txt aus.</p>';
+      return;
+    }
+
+    var latest = keyToDate(state.nights[state.nights.length - 1].dateKey);
+    var today = new Date();
+    var gap = daysBetween(latest, today);
+    if (gap >= 2) {
+      banner.textContent = 'Letzte Schlafdaten: ' + fmtDayLong(dateToKey(latest)) + '. Seit ' + gap + ' Tagen keine Daten (Uhr nicht getragen oder nicht importiert).';
+      banner.hidden = false;
+    }
+
+    var slots = slotsForRange();
+    var seg = '<div class="seg" id="rangeSeg">' +
+      [[7, '7 Tage'], [30, '30 Tage'], [0, 'Alle']].map(function (r) {
+        return '<button data-range="' + r[0] + '"' + (state.range === r[0] ? ' class="active"' : '') + '>' + r[1] + '</button>';
+      }).join('') + '</div>';
+
+    var bars = slots.map(function (k) {
+      var n = nightByKey(k);
+      var d = keyToDate(k);
+      var lbl = state.range === 7 ? WD[d.getDay()] : String(d.getDate());
+      var cls = 'bar', val = '', style = '';
+      if (!n) { cls += ' none'; }
+      else if (n.score.incomplete) { cls += ' incomplete'; }
+      else { val = '<span class="val">' + n.score.total + '</span>'; style = ' style="height:' + Math.max(4, n.score.total * 0.78) + 'px"'; }
+      if (k === state.selected) { cls += ' sel'; }
+      var inner = n ? val + '<div class="fill"' + style + '></div>' : '<div class="fill"></div>';
+      return '<button class="' + cls + '"' + (n ? ' data-night="' + k + '"' : ' disabled') + ' aria-label="' + fmtDay(k) + '">' + inner + '<span class="lbl">' + lbl + '</span></button>';
+    }).join('');
+
+    var rows = slots.slice().reverse().map(function (k) {
+      var n = nightByKey(k);
+      if (!n) { return '<div class="rowbtn none"><span>' + fmtDay(k) + '<small>keine Daten</small></span><span></span><span></span></div>'; }
+      var sc = n.score;
+      return '<button class="rowbtn' + (k === state.selected ? ' sel' : '') + '" data-night="' + k + '"><span>' + fmtDay(k) +
+        '<small>' + fmtTime(n.session.start) + ' – ' + fmtTime(n.session.end) + '</small></span>' +
+        '<span class="muted">' + fmtDur(n.session.sleepMin) + '</span>' +
+        '<span class="pts">' + (sc.incomplete ? '–' : sc.total) + '</span></button>';
+    }).join('');
+
+    var sel = nightByKey(state.selected);
+    body.innerHTML = seg + '<div class="chart" id="chart">' + bars + '</div>' +
+      (sel ? nightDetail(sel) : '') +
+      '<h3>Verlauf</h3><div class="rows">' + rows + '</div>';
+
+    var chart = $('chart');
+    if (chart && chart.scrollWidth > chart.clientWidth) { chart.scrollLeft = chart.scrollWidth; }
+  }
+
+  $('sleepBody').addEventListener('click', function (ev) {
+    var t = ev.target;
+    while (t && t !== this && !(t.dataset && (t.dataset.night || t.dataset.range !== undefined))) { t = t.parentNode; }
+    if (!t || t === this || !t.dataset) { return; }
+    if (t.dataset.range !== undefined) { state.range = parseInt(t.dataset.range, 10); }
+    else if (t.dataset.night) { state.selected = t.dataset.night; }
+    renderDashboard();
+  });
+
+  /* ---------- Import ---------- */
+  function fmtStamp(ms) {
+    var d = new Date(ms);
+    return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() + ', ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function renderImportInfo() {
+    $('lastImport').textContent = state.meta.lastImport ? 'Letzter Import: ' + fmtStamp(state.meta.lastImport) : 'Noch nichts importiert.';
+    var n = state.nights.length;
+    $('dataInfo').textContent = n
+      ? n + (n === 1 ? ' Nacht' : ' Nächte') + ' gespeichert (' + fmtDay(state.nights[0].dateKey) + state.nights[0].dateKey.slice(0, 4) + ' bis ' + fmtDayLong(state.nights[n - 1].dateKey) + '), ' + state.segments.length + ' Abschnitte. Die Daten liegen nur auf diesem Gerät.'
+      : 'Keine Daten gespeichert.';
+  }
+
+  function showResult(text, isError) {
+    var el = $('importResult');
+    el.hidden = false;
+    el.textContent = text;
+    el.className = 'result ' + (isError ? 'bad' : '');
+  }
+
+  function readFile(file) {
+    if (file.text) { return file.text(); }
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result)); };
+      r.onerror = function () { reject(r.error); };
+      r.readAsText(file);
     });
   }
 
   $('file').addEventListener('change', function (ev) {
     var files = Array.prototype.slice.call(ev.target.files || []);
+    ev.target.value = '';
     if (!files.length) { return; }
-    $('fileOut').textContent = 'Lese …';
-    Promise.all(files.map(inspectFile)).then(function (parts) {
-      $('fileOut').textContent = parts.join('\n\n----------\n\n');
+    $('toDash').hidden = true;
+    showResult('Lese …', false);
+    Promise.all(files.map(readFile)).then(function (texts) {
+      var parsed = [], tot = { records: 0, used: 0, duplicates: 0, badDates: 0, reversed: 0, ignored: {}, suspect: false };
+      texts.forEach(function (t) {
+        var r = C.parseExport(t);
+        parsed.push(r.segments);
+        tot.records += r.stats.records; tot.used += r.stats.used; tot.duplicates += r.stats.duplicates;
+        tot.badDates += r.stats.badDates; tot.reversed += r.stats.reversed;
+        if (r.stats.suspectFormat) { tot.suspect = true; }
+        Object.keys(r.stats.ignored).forEach(function (k) { tot.ignored[k] = (tot.ignored[k] || 0) + r.stats.ignored[k]; });
+      });
+      var all = [];
+      parsed.forEach(function (p) { all = all.concat(p); });
+
+      if (tot.suspect) {
+        showResult('Das Datumsformat wurde nicht richtig erkannt (' + tot.badDates + ' ungültige Daten, ' + tot.reversed + ' Abschnitte mit Ende vor Start). Es wurde nichts importiert. Hast du Sprache oder Region am iPhone geändert? Schick mir in dem Fall die ersten Zeilen der Datei.', true);
+        return;
+      }
+      if (!all.length) {
+        showResult('Keine Schlafabschnitte erkannt. Die Datei muss je Messung eine Zeile mit Kern, REM, Tief oder Wach und danach zwei Datumszeilen enthalten.', true);
+        return;
+      }
+
+      var before = state.nights.length;
+      var from = all.reduce(function (m, x) { return Math.min(m, x.s); }, Infinity);
+      var to = all.reduce(function (m, x) { return Math.max(m, x.e); }, -Infinity);
+      // Jede Datei einzeln zusammenführen, die mit dem spätesten Ende zuletzt (sie gewinnt bei Überlappung).
+      parsed.filter(function (p) { return p.length; })
+        .map(function (p) { return { segs: p, end: p.reduce(function (m, x) { return Math.max(m, x.e); }, -Infinity) }; })
+        .sort(function (a, b) { return a.end - b.end; })
+        .forEach(function (f) { state.segments = C.mergeSegments(state.segments, f.segs); });
+      state.meta.lastImport = Date.now();
+      recompute();
+      state.selected = state.nights.length ? state.nights[state.nights.length - 1].dateKey : null;
+
+      return Promise.all([kvSet('segments', state.segments), kvSet('meta', state.meta)]).then(function () {
+        var lines = [];
+        lines.push('Importiert: ' + all.length + ' Abschnitte');
+        lines.push('Zeitraum: ' + fmtStamp(from * 60000) + ' bis ' + fmtStamp(to * 60000));
+        lines.push('Gespeichert: ' + state.nights.length + (state.nights.length === 1 ? ' Nacht' : ' Nächte') + (state.nights.length > before ? ' (neu: ' + (state.nights.length - before) + ')' : ''));
+        var ig = Object.keys(tot.ignored);
+        if (ig.length) { lines.push('Ignoriert (nicht gewertet): ' + ig.map(function (k) { return k + ' ×' + tot.ignored[k]; }).join(', ')); }
+        if (tot.duplicates) { lines.push('Doppelte Abschnitte übersprungen: ' + tot.duplicates); }
+        if (tot.badDates || tot.reversed) { lines.push('Übersprungen wegen Datumsfehlern: ' + (tot.badDates + tot.reversed)); }
+        showResult(lines.join('\n'), false);
+        $('toDash').hidden = false;
+        renderImportInfo();
+        renderDashboard();
+      });
     }).catch(function (e) {
-      $('fileOut').textContent = 'Fehler beim Lesen: ' + e.message;
+      showResult('Fehler beim Lesen: ' + (e && e.message ? e.message : e), true);
     });
   });
 
-  // 4. Zwischenablage-Test
-  $('paste').addEventListener('click', function () {
-    if (!navigator.clipboard || !navigator.clipboard.readText) {
-      $('pasteOut').textContent = 'Dieser Browser erlaubt kein Lesen der Zwischenablage.';
-      return;
-    }
-    navigator.clipboard.readText().then(function (t) {
-      $('pasteOut').textContent = 'Länge: ' + t.length + ' Zeichen\n\n' + t.slice(0, 1000);
-    }).catch(function (e) {
-      $('pasteOut').textContent = 'Nicht erlaubt oder Fehler: ' + (e && e.message ? e.message : e);
+  $('toDash').addEventListener('click', function () { switchTab('dashboard'); });
+
+  $('clearData').addEventListener('click', function () {
+    if (!window.confirm('Wirklich alle gespeicherten Schlafdaten löschen? Das kannst du nicht rückgängig machen.')) { return; }
+    state.segments = []; state.meta = {};
+    recompute();
+    Promise.all([kvSet('segments', []), kvSet('meta', {})]).then(function () {
+      $('importResult').hidden = true;
+      renderImportInfo(); renderDashboard();
     });
+  });
+
+  /* ---------- Einstellungen ---------- */
+  var FIELDS = {
+    s_durFull:  function (c) { return (c.durFullMin / 60).toFixed(1).replace(/\.0$/, ''); },
+    s_durZero:  function (c) { return (c.durZeroMin / 60).toFixed(1).replace(/\.0$/, ''); },
+    s_deepFull: function (c) { return c.deepFullMin; },
+    s_deepZero: function (c) { return c.deepZeroMin; },
+    s_remFull:  function (c) { return c.remFullMin; },
+    s_remZero:  function (c) { return c.remZeroMin; },
+    s_onsetFrom: function (c) { return minToHM(c.onsetFrom); },
+    s_onsetTo:   function (c) { return minToHM(c.onsetTo); }
+  };
+  function fillSettings() { Object.keys(FIELDS).forEach(function (id) { $(id).value = FIELDS[id](state.cfg); }); }
+
+  function readSettings() {
+    var c = copy(state.cfg);
+    c.durFullMin = Math.round(parseFloat($('s_durFull').value) * 60);
+    c.durZeroMin = Math.round(parseFloat($('s_durZero').value) * 60);
+    c.deepFullMin = parseInt($('s_deepFull').value, 10);
+    c.deepZeroMin = parseInt($('s_deepZero').value, 10);
+    c.remFullMin = parseInt($('s_remFull').value, 10);
+    c.remZeroMin = parseInt($('s_remZero').value, 10);
+    c.onsetFrom = hmToMin($('s_onsetFrom').value);
+    c.onsetTo = hmToMin($('s_onsetTo').value);
+    return c;
+  }
+  function validSettings(c) {
+    var nums = [c.durFullMin, c.durZeroMin, c.deepFullMin, c.deepZeroMin, c.remFullMin, c.remZeroMin, c.onsetFrom, c.onsetTo];
+    if (nums.some(function (v) { return typeof v !== 'number' || isNaN(v); })) { return 'Bitte alle Felder ausfüllen.'; }
+    if (c.durFullMin <= c.durZeroMin) { return 'Bei der Schlafdauer muss „volle Punkte“ größer sein als „0 Punkte“.'; }
+    if (c.deepFullMin <= c.deepZeroMin) { return 'Beim Tiefschlaf muss „volle Punkte“ größer sein als „0 Punkte“.'; }
+    if (c.remFullMin <= c.remZeroMin) { return 'Bei REM muss „volle Punkte“ größer sein als „0 Punkte“.'; }
+    if (c.onsetFrom >= c.onsetTo) { return 'Das Einschlaf-Fenster muss früher beginnen als es endet.'; }
+    return '';
+  }
+  function onSettingsChange() {
+    var c = readSettings();
+    var err = validSettings(c);
+    var msg = $('settingsMsg');
+    if (err) { msg.textContent = err; msg.className = 'hint bad'; return; }
+    state.cfg = c;
+    msg.textContent = 'Gespeichert. Alle Nächte wurden neu berechnet.';
+    msg.className = 'hint ok';
+    kvSet('settings', state.cfg);
+    recompute(); renderDashboard(); renderImportInfo();
+  }
+  Object.keys(FIELDS).forEach(function (id) { $(id).addEventListener('change', onSettingsChange); });
+  $('resetSettings').addEventListener('click', function () {
+    state.cfg = copy(C.DEFAULT_CONFIG);
+    kvSet('settings', state.cfg);
+    fillSettings();
+    $('settingsMsg').textContent = 'Auf Startwerte zurückgesetzt.';
+    $('settingsMsg').className = 'hint ok';
+    recompute(); renderDashboard();
+  });
+
+  /* ---------- Tabs ---------- */
+  function switchTab(name) {
+    ['dashboard', 'training', 'import'].forEach(function (t) { $('tab-' + t).hidden = (t !== name); });
+    Array.prototype.forEach.call(document.querySelectorAll('#tabbar button'), function (b) {
+      b.classList.toggle('active', b.dataset.tab === name);
+    });
+    window.scrollTo(0, 0);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('#tabbar button'), function (b) {
+    b.addEventListener('click', function () { switchTab(b.dataset.tab); });
+  });
+
+  /* ---------- Start ---------- */
+  Promise.all([kvGet('segments'), kvGet('settings'), kvGet('meta')]).then(function (r) {
+    if (Array.isArray(r[0])) { state.segments = r[0]; }
+    if (r[1] && typeof r[1] === 'object') {
+      var merged = copy(C.DEFAULT_CONFIG);
+      Object.keys(merged).forEach(function (k) { if (typeof r[1][k] === 'number') { merged[k] = r[1][k]; } });
+      if (!validSettings(merged)) { state.cfg = merged; }
+    }
+    if (r[2] && typeof r[2] === 'object') { state.meta = r[2]; }
+  }).catch(function () {}).then(function () {
+    recompute();
+    fillSettings();
+    renderImportInfo();
+    renderDashboard();
   });
 })();
 </script>
