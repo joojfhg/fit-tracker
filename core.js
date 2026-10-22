@@ -1,4 +1,4 @@
-/* Fit-Tracker – Schlaf-Logik (ohne Oberfläche). Wird von index.html geladen. */
+/* Fit-Tracker – Logik ohne Oberfläche (Schlaf, Messreihen, Stress). Wird von index.html geladen. */
 (function (root) {
   'use strict';
 
@@ -23,8 +23,20 @@
     sessionGapMin: 90       // mehr als 90 Min Lücke trennt zwei Schlafphasen
   };
 
+  // Block-Namen in der Datei (#Name) -> interner Name
+  var BLOCKS = {
+    schlaf: 'sleep', sleep: 'sleep',
+    ruhepuls: 'rest', restingheartrate: 'rest',
+    hrv: 'hrv', herzfrequenzvariabilitat: 'hrv',
+    vo2max: 'vo2', kardiofitness: 'vo2', cardiofitness: 'vo2',
+    herzfrequenz: 'hr', herfrequenz: 'hr', heartrate: 'hr',
+    schritte: 'steps', steps: 'steps'
+  };
+  var SERIES_NAMES = ['rest', 'hrv', 'vo2', 'hr', 'steps'];
+
   var DATE_LIKE_RE = /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/;
   var DATE_RE = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4}),?\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])?$/;
+  var NUM_RE = /^(-?\d+(?:[.,]\d+)?)(?:\s+\S.*)?$/;
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -48,18 +60,40 @@
     return { ok: true, min: Math.round(dt.getTime() / 60000) };
   }
 
-  // Liest den Text aus schlaf.txt: je Messung "Phase", "Start", "Ende".
+  function normBlock(label) {
+    var s = String(label).replace(/^#+/, '').trim().toLowerCase()
+      .replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ß/g, 'ss')
+      .replace(/[^a-z0-9]/g, '');
+    return BLOCKS[s] || null;
+  }
+
+  function parseNumber(line) {
+    var m = NUM_RE.exec(line);
+    if (!m) { return null; }
+    var v = parseFloat(m[1].replace(',', '.'));
+    return isFinite(v) ? v : null;
+  }
+
+  function emptySeries() { return { rest: [], hrv: [], vo2: [], hr: [], steps: [] }; }
+
+  // Liest eine Datei. Blöcke beginnen mit "#Name". Ohne Marker am Anfang gilt: Schlaf (alte Dateien).
   function parseExport(text) {
     var lines = String(text).replace(/^﻿/, '').split(/\r?\n/);
     var segs = [];
+    var series = emptySeries();
     var seen = {};
+    var seenSeries = {};
     var stats = {
       records: 0, used: 0, duplicates: 0, badDates: 0, reversed: 0,
-      incomplete: 0, stray: 0, ignored: {}, suspectFormat: false
+      incomplete: 0, stray: 0, ignored: {}, suspectFormat: false,
+      blocks: [], unknownBlocks: [], series: {}
     };
-    var cur = null;
+    SERIES_NAMES.forEach(function (n) { stats.series[n] = { used: 0, duplicates: 0, incomplete: 0, stray: 0 }; });
+    var block = 'sleep';
+    var cur = null;       // Schlaf: aktuelle Messung
+    var pending = null;   // Messreihen: gelesener Wert, wartet auf Datum
 
-    function finish() {
+    function finishSleep() {
       stats.records++;
       var s = cur.dates[0], e = cur.dates[1];
       if (isNaN(s) || isNaN(e)) { return; }
@@ -73,24 +107,91 @@
       stats.used++;
     }
 
+    function closeBlock() {
+      if (block === 'sleep') {
+        if (cur && cur.dates.length < 2) { stats.incomplete++; }
+        cur = null;
+      } else if (SERIES_NAMES.indexOf(block) >= 0) {
+        if (pending !== null) { stats.series[block].incomplete++; }
+        pending = null;
+      }
+    }
+
+    function markSeen(name) { if (stats.blocks.indexOf(name) < 0) { stats.blocks.push(name); } }
+
+    var first = true;
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i].trim();
       if (!line) { continue; }
-      var d = parseDateLine(line);
-      if (d === null) {
-        if (cur && cur.dates.length < 2) { stats.incomplete++; }
-        cur = { label: line, dates: [] };
+      if (line.charAt(0) === '#') {
+        closeBlock();
+        var nb = normBlock(line);
+        if (nb) { block = nb; markSeen(nb); }
+        else { block = 'unknown'; if (stats.unknownBlocks.indexOf(line) < 0) { stats.unknownBlocks.push(line); } }
+        first = false;
+        continue;
+      }
+      if (first) { markSeen('sleep'); first = false; }
+      if (block === 'unknown') { continue; }
+
+      if (block === 'sleep') {
+        var d = parseDateLine(line);
+        if (d === null) {
+          if (cur && cur.dates.length < 2) { stats.incomplete++; }
+          cur = { label: line, dates: [] };
+        } else {
+          if (!cur || cur.dates.length >= 2) { stats.stray++; continue; }
+          if (!d.ok) { stats.badDates++; cur.dates.push(NaN); } else { cur.dates.push(d.min); }
+          if (cur.dates.length === 2) { finishSleep(); }
+        }
       } else {
-        if (!cur || cur.dates.length >= 2) { stats.stray++; continue; }
-        if (!d.ok) { stats.badDates++; cur.dates.push(NaN); } else { cur.dates.push(d.min); }
-        if (cur.dates.length === 2) { finish(); }
+        var st = stats.series[block];
+        var dt = parseDateLine(line);
+        if (dt === null) {
+          var v = parseNumber(line);
+          if (v === null) { st.stray++; continue; }
+          if (pending !== null) { st.incomplete++; }
+          pending = v;
+        } else {
+          if (pending === null) { st.stray++; continue; }
+          if (!dt.ok) { stats.badDates++; pending = null; continue; }
+          var k = block === 'steps' ? 'd' + pointDay(dt.min) : 't' + dt.min;
+          var sk = block + '|' + k;
+          if (seenSeries[sk]) { st.duplicates++; }
+          seenSeries[sk] = true;
+          series[block].push({ t: dt.min, v: pending });
+          st.used++;
+          pending = null;
+        }
       }
     }
-    if (cur && cur.dates.length < 2) { stats.incomplete++; }
+    closeBlock();
 
-    stats.suspectFormat = stats.records > 0 && (stats.reversed + stats.badDates) / stats.records > 0.1;
+    var seriesUsed = 0;
+    SERIES_NAMES.forEach(function (n) { seriesUsed += stats.series[n].used; });
+    var total = stats.records + seriesUsed + stats.badDates;
+    stats.suspectFormat = total > 0 && (stats.reversed + stats.badDates) / total > 0.1;
     segs.sort(function (a, b) { return a.s - b.s || a.e - b.e; });
-    return { segments: segs, stats: stats };
+    SERIES_NAMES.forEach(function (n) { series[n] = dedupeSeries(series[n], n === 'steps' ? 'day' : 't'); });
+    return { segments: segs, series: series, stats: stats };
+  }
+
+  function pointDay(t) { return dateKey(t); }
+
+  // Innerhalb einer Datei: bei gleichem Schlüssel gewinnt der spätere Eintrag.
+  function dedupeSeries(list, mode) {
+    var map = {};
+    list.forEach(function (p) { map[mode === 'day' ? dateKey(p.t) : p.t] = p; });
+    return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return a.t - b.t; });
+  }
+
+  // Messreihen zusammenführen: gleicher Zeitpunkt (Schritte: gleicher Tag) wird ersetzt, alles andere bleibt.
+  function mergeSeries(stored, incoming, mode) {
+    var map = {};
+    function add(p) { map[mode === 'day' ? dateKey(p.t) : p.t] = p; }
+    stored.forEach(add);
+    incoming.forEach(add);
+    return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return a.t - b.t; });
   }
 
   // Eine Datei ist maßgeblich für den Zeitraum, den sie abdeckt (frühester Start bis spätestes Ende).
@@ -214,15 +315,194 @@
     };
   }
 
+  /* ---------- Messreihen ---------- */
+
+  function median(arr) {
+    if (!arr.length) { return null; }
+    var a = arr.slice().sort(function (x, y) { return x - y; });
+    var m = Math.floor(a.length / 2);
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+  }
+  function quantile(arr, q) {
+    if (!arr.length) { return null; }
+    var a = arr.slice().sort(function (x, y) { return x - y; });
+    return a[Math.min(a.length - 1, Math.max(0, Math.floor(q * (a.length - 1))))];
+  }
+
+  // Herzfrequenz aus "Gruppieren nach" kann Summen statt Pulswerten liefern (z. B. 720 = 12 Messungen à 60).
+  function hrLooksLikeSums(list) {
+    if (list.length < 3) { return false; }
+    return median(list.map(function (p) { return p.v; })) > 220;
+  }
+
+  // Letzter Wert je Tag.
+  function dailyLast(list) {
+    var out = {};
+    list.forEach(function (p) {
+      var k = dateKey(p.t);
+      if (!out[k] || p.t >= out[k].t) { out[k] = { t: p.t, v: p.v }; }
+    });
+    return out;
+  }
+
+  // Mittelwert, Minimum, Maximum je Tag.
+  function dailyStats(list) {
+    var out = {};
+    list.forEach(function (p) {
+      var k = dateKey(p.t);
+      var o = out[k] || (out[k] = { sum: 0, n: 0, min: Infinity, max: -Infinity, list: [] });
+      o.sum += p.v; o.n++; o.list.push(p);
+      if (p.v < o.min) { o.min = p.v; }
+      if (p.v > o.max) { o.max = p.v; }
+    });
+    Object.keys(out).forEach(function (k) { out[k].v = out[k].sum / out[k].n; });
+    return out;
+  }
+
+  function hourStart(t) {
+    var d = new Date(t * 60000);
+    d.setMinutes(0, 0, 0);
+    return Math.round(d.getTime() / 60000);
+  }
+
+  // Herzfrequenz je volle Stunde: Mittel, Min, Max, Anzahl.
+  function hourlyHR(hr) {
+    var map = {};
+    hr.forEach(function (p) {
+      var h = hourStart(p.t);
+      var b = map[h] || (map[h] = { t: h, sum: 0, n: 0, min: Infinity, max: -Infinity });
+      b.sum += p.v; b.n++;
+      if (p.v < b.min) { b.min = p.v; }
+      if (p.v > b.max) { b.max = p.v; }
+    });
+    return Object.keys(map).map(function (k) {
+      var b = map[k];
+      var d = new Date(b.t * 60000);
+      return { t: b.t, key: dateKey(b.t), h: d.getHours(), avg: b.sum / b.n, min: b.min, max: b.max, n: b.n };
+    }).sort(function (a, b) { return a.t - b.t; });
+  }
+
+  function stressLabel(v) {
+    if (v === null || v === undefined) { return ''; }
+    if (v < 25) { return 'niedrig'; }
+    if (v < 50) { return 'mäßig'; }
+    if (v < 75) { return 'erhöht'; }
+    return 'hoch';
+  }
+
+  /* Stress-Indikator (eigene Schätzung, kein medizinischer Wert).
+     Je volle Stunde: Herzfrequenz im Verhältnis zum Ruhepuls (0 Punkte bei ≤ 115 %, 100 bei ≥ 175 %).
+     Liegt in der Stunde ein HRV-Wert vor, geht er zu 40 % ein (0 bei ≥ eigenem Median, 100 bei ≤ halbem Median).
+     Zeiten eines eingetragenen Laufs (opts.exclude) zählen nicht. */
+  function computeStress(input, opts) {
+    opts = opts || {};
+    var res = { status: 'ok', baseHR: null, baseApprox: false, baseHRV: null, hours: [], days: [], pattern: null };
+    var hr = input.hr || [];
+    var hrv = input.hrv || [];
+    var rest = input.rest || [];
+    if (hrLooksLikeSums(hr)) { res.status = 'sums'; return res; }
+    if (!hr.length) { res.status = 'nohr'; return res; }
+
+    var base = rest.length >= 2 ? median(rest.map(function (p) { return p.v; })) : null;
+    if (base === null && hr.length >= 30) { base = quantile(hr.map(function (p) { return p.v; }), 0.1); res.baseApprox = true; }
+    if (base === null) { res.status = 'nobase'; return res; }
+    res.baseHR = base;
+    res.baseHRV = hrv.length >= 4 ? median(hrv.map(function (p) { return p.v; })) : null;
+
+    var ex = opts.exclude || [];
+    function excluded(t) {
+      for (var i = 0; i < ex.length; i++) { if (t >= ex[i].s && t <= ex[i].e) { return true; } }
+      return false;
+    }
+    var hrUse = hr.filter(function (p) { return !excluded(p.t); });
+    var hrvByHour = {};
+    hrv.forEach(function (p) {
+      if (excluded(p.t) || res.baseHRV === null) { return; }
+      var h = hourStart(p.t);
+      (hrvByHour[h] || (hrvByHour[h] = [])).push(p.v);
+    });
+
+    var hours = [];
+    hourlyHR(hrUse).forEach(function (b) {
+      if (b.n < 2) { return; }
+      var sHR = clamp((b.avg / base - 1.15) / (1.75 - 1.15), 0, 1) * 100;
+      var s = sHR, usedHrv = false;
+      var hv = hrvByHour[b.t];
+      if (hv && hv.length) {
+        var avgHv = hv.reduce(function (a, c) { return a + c; }, 0) / hv.length;
+        var sHRV = clamp((res.baseHRV - avgHv) / (0.5 * res.baseHRV), 0, 1) * 100;
+        s = 0.6 * sHR + 0.4 * sHRV;
+        usedHrv = true;
+      }
+      hours.push({ t: b.t, key: b.key, h: b.h, hr: b.avg, n: b.n, stress: Math.round(s), usedHrv: usedHrv });
+    });
+    res.hours = hours;
+
+    var byDay = {};
+    hours.forEach(function (x) { (byDay[x.key] || (byDay[x.key] = [])).push(x); });
+    res.days = Object.keys(byDay).sort().map(function (k) {
+      var hs = byDay[k];
+      var sum = 0, peak = hs[0];
+      hs.forEach(function (x) { sum += x.stress; if (x.stress > peak.stress) { peak = x; } });
+      return { key: k, avg: Math.round(sum / hs.length), peakHour: peak.h, peakValue: peak.stress, hours: hs.length };
+    });
+
+    // Muster der letzten 7 Kalendertage bis zum letzten Tag mit Daten
+    if (res.days.length) {
+      var latest = res.days[res.days.length - 1].key.split('-');
+      var cut = new Date(+latest[0], +latest[1] - 1, +latest[2] - 6).getTime() / 60000;
+      var sum = [], cnt = [], dayset = [];
+      for (var h = 0; h < 24; h++) { sum.push(0); cnt.push(0); dayset.push({}); }
+      var daysInWindow = {};
+      hours.forEach(function (x) {
+        if (x.t < cut) { return; }
+        sum[x.h] += x.stress; cnt[x.h]++; dayset[x.h][x.key] = true;
+        daysInWindow[x.key] = true;
+      });
+      var nDays = Object.keys(daysInWindow).length;
+      var byHour = [];
+      var peakH = -1, peakAvg = -1;
+      for (var q = 0; q < 24; q++) {
+        var nd = Object.keys(dayset[q]).length;
+        var avg = cnt[q] ? sum[q] / cnt[q] : null;
+        byHour.push({ avg: avg === null ? null : Math.round(avg), days: nd });
+        if (avg !== null && nd >= 2 && avg > peakAvg) { peakAvg = avg; peakH = q; }
+      }
+      res.pattern = {
+        days: nDays, provisional: nDays < 7, enough: nDays >= 3 && peakH >= 0,
+        byHour: byHour, peakHour: peakH, peakAvg: peakH >= 0 ? Math.round(peakAvg) : null,
+        peakDays: peakH >= 0 ? byHour[peakH].days : 0
+      };
+    }
+    return res;
+  }
+
+  // Alte Herzfrequenz-Rohdaten begrenzen (nur Speicherplatz).
+  function pruneHR(list, nowMin, days) {
+    var cut = nowMin - days * 1440;
+    return list.filter(function (p) { return p.t >= cut; });
+  }
+
   var api = {
     DEFAULT_CONFIG: DEFAULT_CONFIG,
+    SERIES_NAMES: SERIES_NAMES,
     parseExport: parseExport,
+    emptySeries: emptySeries,
     mergeSegments: mergeSegments,
+    mergeSeries: mergeSeries,
     buildSessions: buildSessions,
     pickNights: pickNights,
     scoreNight: scoreNight,
     dateKey: dateKey,
-    minuteOfDay: minuteOfDay
+    minuteOfDay: minuteOfDay,
+    median: median,
+    hrLooksLikeSums: hrLooksLikeSums,
+    dailyLast: dailyLast,
+    dailyStats: dailyStats,
+    hourlyHR: hourlyHR,
+    computeStress: computeStress,
+    stressLabel: stressLabel,
+    pruneHR: pruneHR
   };
 
   root.FitCore = api;
