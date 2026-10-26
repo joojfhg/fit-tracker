@@ -82,7 +82,6 @@
     var segs = [];
     var series = emptySeries();
     var seen = {};
-    var seenSeries = {};
     var stats = {
       records: 0, used: 0, duplicates: 0, badDates: 0, reversed: 0,
       incomplete: 0, stray: 0, ignored: {}, suspectFormat: false,
@@ -155,10 +154,6 @@
         } else {
           if (pending === null) { st.stray++; continue; }
           if (!dt.ok) { stats.badDates++; pending = null; continue; }
-          var k = block === 'steps' ? 'd' + pointDay(dt.min) : 't' + dt.min;
-          var sk = block + '|' + k;
-          if (seenSeries[sk]) { st.duplicates++; }
-          seenSeries[sk] = true;
           series[block].push({ t: dt.min, v: pending });
           st.used++;
           pending = null;
@@ -172,26 +167,35 @@
     var total = stats.records + seriesUsed + stats.badDates;
     stats.suspectFormat = total > 0 && (stats.reversed + stats.badDates) / total > 0.1;
     segs.sort(function (a, b) { return a.s - b.s || a.e - b.e; });
-    SERIES_NAMES.forEach(function (n) { series[n] = dedupeSeries(series[n], n === 'steps' ? 'day' : 't'); });
+    ['rest', 'hrv', 'vo2'].forEach(function (n) { series[n] = dedupeSeries(series[n]); });
+    ['hr', 'steps'].forEach(function (n) { series[n].sort(function (a, b) { return a.t - b.t; }); });
     return { segments: segs, series: series, stats: stats };
   }
 
-  function pointDay(t) { return dateKey(t); }
-
-  // Innerhalb einer Datei: bei gleichem Schlüssel gewinnt der spätere Eintrag.
-  function dedupeSeries(list, mode) {
+  // Selten gemessene Werte (Ruhepuls, HRV, VO2max): bei gleichem Zeitpunkt gewinnt der spätere Eintrag.
+  function dedupeSeries(list) {
     var map = {};
-    list.forEach(function (p) { map[mode === 'day' ? dateKey(p.t) : p.t] = p; });
+    list.forEach(function (p) { map[p.t] = p; });
     return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return a.t - b.t; });
   }
 
-  // Messreihen zusammenführen: gleicher Zeitpunkt (Schritte: gleicher Tag) wird ersetzt, alles andere bleibt.
-  function mergeSeries(stored, incoming, mode) {
+  // Seltene Messreihen zusammenführen: gleicher Zeitpunkt wird ersetzt, alles andere bleibt.
+  function mergeSeries(stored, incoming) {
     var map = {};
-    function add(p) { map[mode === 'day' ? dateKey(p.t) : p.t] = p; }
-    stored.forEach(add);
-    incoming.forEach(add);
+    stored.forEach(function (p) { map[p.t] = p; });
+    incoming.forEach(function (p) { map[p.t] = p; });
     return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return a.t - b.t; });
+  }
+
+  // Dichte Messreihen (Puls, Schritte): Die neue Datei ist maßgeblich für den Zeitraum vom ersten bis zum letzten Eintrag.
+  // Gespeicherte Einträge in diesem Zeitraum werden ersetzt, alles davor und danach bleibt.
+  // Mehrere Einträge in derselben Minute bleiben erhalten (wichtig für Schritte, die je Eintrag nur ein Teil des Tages sind).
+  function mergeRange(stored, incoming) {
+    if (!incoming.length) { return stored.slice(); }
+    var lo = Infinity, hi = -Infinity;
+    incoming.forEach(function (p) { if (p.t < lo) { lo = p.t; } if (p.t > hi) { hi = p.t; } });
+    var kept = stored.filter(function (p) { return p.t < lo || p.t > hi; });
+    return kept.concat(incoming).sort(function (a, b) { return a.t - b.t; });
   }
 
   // Eine Datei ist maßgeblich für den Zeitraum, den sie abdeckt (frühester Start bis spätestes Ende).
@@ -315,6 +319,7 @@
     };
   }
 
+
   /* ---------- Messreihen ---------- */
 
   function median(arr) {
@@ -341,6 +346,16 @@
     list.forEach(function (p) {
       var k = dateKey(p.t);
       if (!out[k] || p.t >= out[k].t) { out[k] = { t: p.t, v: p.v }; }
+    });
+    return out;
+  }
+
+  // Summe je Tag (Schritte: jeder Eintrag ist ein Teil des Tages).
+  function dailySums(list) {
+    var out = {};
+    list.forEach(function (p) {
+      var k = dateKey(p.t);
+      out[k] = (out[k] || 0) + p.v;
     });
     return out;
   }
@@ -382,21 +397,56 @@
     }).sort(function (a, b) { return a.t - b.t; });
   }
 
+  // Verdacht auf Aktivität: Die Watch misst bei Anstrengung deutlich häufiger als in Ruhe (ca. alle 5 Minuten).
+  // Ein Zeitfenster gilt als dicht, wenn darin mindestens DENSE_N Messungen innerhalb von DENSE_SPAN Minuten liegen
+  // und der Puls dort deutlich (mindestens 160 %) über dem Ruhepuls liegt. Die Watch misst auch in der Erholungsphase dicht, aber dort ist der Puls niedriger.
+  var DENSE_N = 5, DENSE_SPAN = 6, DENSE_JOIN = 5, DENSE_MINRATIO = 1.6;
+  function activityWindows(hr, base) {
+    var w = [];
+    var n = hr.length;
+    var j = 0;
+    for (var i = 0; i < n; i++) {
+      if (j < i) { j = i; }
+      while (j + 1 < n && hr[j + 1].t - hr[i].t <= DENSE_SPAN) { j++; }
+      if (j - i + 1 >= DENSE_N) {
+        var mx = 0;
+        for (var q = i; q <= j; q++) { if (hr[q].v > mx) { mx = hr[q].v; } }
+        if (base === null || mx >= base * DENSE_MINRATIO) {
+          w.push({ s: hr[i].t, e: hr[j].t });
+        }
+      }
+    }
+    // zusammenfassen (mit Nachlauf)
+    var out = [];
+    w.forEach(function (x) {
+      var last = out[out.length - 1];
+      if (last && x.s <= last.e + DENSE_JOIN) { if (x.e > last.e) { last.e = x.e; } }
+      else { out.push({ s: x.s, e: x.e }); }
+    });
+    out.forEach(function (x) {
+      var mx = 0, cnt = 0;
+      hr.forEach(function (p) { if (p.t >= x.s && p.t <= x.e) { cnt++; if (p.v > mx) { mx = p.v; } } });
+      x.max = mx; x.n = cnt;
+    });
+    return out;
+  }
+
+  // Stress-Stufen (offene Skala: über 100 ist möglich).
   function stressLabel(v) {
     if (v === null || v === undefined) { return ''; }
     if (v < 25) { return 'niedrig'; }
     if (v < 50) { return 'mäßig'; }
     if (v < 75) { return 'erhöht'; }
-    return 'hoch';
+    if (v <= 100) { return 'hoch'; }
+    return 'sehr hoch';
   }
 
   /* Stress-Indikator (eigene Schätzung, kein medizinischer Wert).
-     Je volle Stunde: Herzfrequenz im Verhältnis zum Ruhepuls (0 Punkte bei ≤ 115 %, 100 bei ≥ 175 %).
+     Je volle Stunde: Herzfrequenz im Verhältnis zum Ruhepuls (0 Punkte bei ≤ 115 %, 100 Punkte bei 175 %, darüber weiter steigend).
      Liegt in der Stunde ein HRV-Wert vor, geht er zu 40 % ein (0 bei ≥ eigenem Median, 100 bei ≤ halbem Median).
-     Zeiten eines eingetragenen Laufs (opts.exclude) zählen nicht. */
-  function computeStress(input, opts) {
-    opts = opts || {};
-    var res = { status: 'ok', baseHR: null, baseApprox: false, baseHRV: null, hours: [], days: [], pattern: null };
+     Aktivität wird nicht herausgerechnet, nur als Verdacht markiert (hour.activity). */
+  function computeStress(input) {
+    var res = { status: 'ok', baseHR: null, baseApprox: false, baseHRV: null, hours: [], days: [], activity: [] };
     var hr = input.hr || [];
     var hrv = input.hrv || [];
     var rest = input.rest || [];
@@ -409,23 +459,26 @@
     res.baseHR = base;
     res.baseHRV = hrv.length >= 4 ? median(hrv.map(function (p) { return p.v; })) : null;
 
-    var ex = opts.exclude || [];
-    function excluded(t) {
-      for (var i = 0; i < ex.length; i++) { if (t >= ex[i].s && t <= ex[i].e) { return true; } }
+    res.activity = activityWindows(hr, base);
+    function inActivity(h) {
+      for (var i = 0; i < res.activity.length; i++) {
+        var a = res.activity[i];
+        if (a.s < h + 60 && a.e >= h) { return true; }
+      }
       return false;
     }
-    var hrUse = hr.filter(function (p) { return !excluded(p.t); });
+
     var hrvByHour = {};
     hrv.forEach(function (p) {
-      if (excluded(p.t) || res.baseHRV === null) { return; }
+      if (res.baseHRV === null) { return; }
       var h = hourStart(p.t);
       (hrvByHour[h] || (hrvByHour[h] = [])).push(p.v);
     });
 
     var hours = [];
-    hourlyHR(hrUse).forEach(function (b) {
+    hourlyHR(hr).forEach(function (b) {
       if (b.n < 2) { return; }
-      var sHR = clamp((b.avg / base - 1.15) / (1.75 - 1.15), 0, 1) * 100;
+      var sHR = Math.max(0, (b.avg / base - 1.15) / (1.75 - 1.15) * 100);
       var s = sHR, usedHrv = false;
       var hv = hrvByHour[b.t];
       if (hv && hv.length) {
@@ -434,7 +487,7 @@
         s = 0.6 * sHR + 0.4 * sHRV;
         usedHrv = true;
       }
-      hours.push({ t: b.t, key: b.key, h: b.h, hr: b.avg, n: b.n, stress: Math.round(s), usedHrv: usedHrv });
+      hours.push({ t: b.t, key: b.key, h: b.h, hr: b.avg, hrMax: b.max, n: b.n, stress: Math.round(s), usedHrv: usedHrv, activity: inActivity(b.t) });
     });
     res.hours = hours;
 
@@ -444,36 +497,8 @@
       var hs = byDay[k];
       var sum = 0, peak = hs[0];
       hs.forEach(function (x) { sum += x.stress; if (x.stress > peak.stress) { peak = x; } });
-      return { key: k, avg: Math.round(sum / hs.length), peakHour: peak.h, peakValue: peak.stress, hours: hs.length };
+      return { key: k, avg: Math.round(sum / hs.length), peakHour: peak.h, peakValue: peak.stress, hours: hs.length, activityHours: hs.filter(function (x) { return x.activity; }).length };
     });
-
-    // Muster der letzten 7 Kalendertage bis zum letzten Tag mit Daten
-    if (res.days.length) {
-      var latest = res.days[res.days.length - 1].key.split('-');
-      var cut = new Date(+latest[0], +latest[1] - 1, +latest[2] - 6).getTime() / 60000;
-      var sum = [], cnt = [], dayset = [];
-      for (var h = 0; h < 24; h++) { sum.push(0); cnt.push(0); dayset.push({}); }
-      var daysInWindow = {};
-      hours.forEach(function (x) {
-        if (x.t < cut) { return; }
-        sum[x.h] += x.stress; cnt[x.h]++; dayset[x.h][x.key] = true;
-        daysInWindow[x.key] = true;
-      });
-      var nDays = Object.keys(daysInWindow).length;
-      var byHour = [];
-      var peakH = -1, peakAvg = -1;
-      for (var q = 0; q < 24; q++) {
-        var nd = Object.keys(dayset[q]).length;
-        var avg = cnt[q] ? sum[q] / cnt[q] : null;
-        byHour.push({ avg: avg === null ? null : Math.round(avg), days: nd });
-        if (avg !== null && nd >= 2 && avg > peakAvg) { peakAvg = avg; peakH = q; }
-      }
-      res.pattern = {
-        days: nDays, provisional: nDays < 7, enough: nDays >= 3 && peakH >= 0,
-        byHour: byHour, peakHour: peakH, peakAvg: peakH >= 0 ? Math.round(peakAvg) : null,
-        peakDays: peakH >= 0 ? byHour[peakH].days : 0
-      };
-    }
     return res;
   }
 
@@ -490,16 +515,20 @@
     emptySeries: emptySeries,
     mergeSegments: mergeSegments,
     mergeSeries: mergeSeries,
+    mergeRange: mergeRange,
     buildSessions: buildSessions,
     pickNights: pickNights,
     scoreNight: scoreNight,
     dateKey: dateKey,
     minuteOfDay: minuteOfDay,
     median: median,
+    quantile: quantile,
     hrLooksLikeSums: hrLooksLikeSums,
     dailyLast: dailyLast,
+    dailySums: dailySums,
     dailyStats: dailyStats,
     hourlyHR: hourlyHR,
+    activityWindows: activityWindows,
     computeStress: computeStress,
     stressLabel: stressLabel,
     pruneHR: pruneHR
